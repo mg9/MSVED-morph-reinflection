@@ -2,7 +2,7 @@ __author__ = 'chuntingzhou'
 import sys
 import os
 import theano
-
+import pdb
 sys.path.append('../')
 from data import data_sup
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
@@ -84,7 +84,9 @@ def main(config):
     ly_src = np.array(data_sup.ly_src)
     lx_tgt = np.array(data_sup.lx_tgt)
     ly_tgt = np.array(data_sup.ly_tgt)
-    ux = ux[:config['ul_num']]
+    #pdb.set_trace()
+    #ux = ux[:config['ul_num']]
+
     logging.info("length of ux and uy: %d, %d", len(ux), len(uy))
     logging.info("Total unlabeled training samples: %d", len(ux))
     logging.info("Total labeled training samples before pruning: %d", len(lx_src))
@@ -92,7 +94,24 @@ def main(config):
     assert len(lx_src) == len(ly_tgt) and len(lx_tgt) == len(ly_tgt)
     labeled = 12000
     unlabeled = len(ux)
-
+    with open('ux.txt', 'w') as writer:
+        for wrd in ux:
+            wrd_info = u''.join([ix_to_char[k] for k in wrd]).encode('utf-8').strip()
+            writer.write(wrd_info+'\n')
+    #with open('uy.txt', 'w') as writer:
+    #    for wrd in uy:
+    #        pdb.set_trace()
+    #        wrd_info = u''.join([ix_to_label[k] for k in wrd]).encode('utf-8').strip()
+    #        writer.write(wrd_info+'\n')
+    with open('lx_src.txt', 'w') as writer:
+        for wrd in lx_src:
+            wrd_info = u''.join([ix_to_char[k] for k in wrd]).encode('utf-8').strip()
+            writer.write(wrd_info+'\n')
+    with open('lx_tgt.txt', 'w') as writer:
+        for wrd in lx_tgt:
+            wrd_info = u''.join([ix_to_char[k] for k in wrd]).encode('utf-8').strip()
+            writer.write(wrd_info+'\n')
+    #pdb.set_trace()
     if prune_train_data:
         inds = np.random.permutation(len(lx_src))
         inds = inds[:labeled]
