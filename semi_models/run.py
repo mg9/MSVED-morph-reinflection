@@ -92,7 +92,24 @@ def main(config):
     assert len(lx_src) == len(ly_tgt) and len(lx_tgt) == len(ly_tgt)
     labeled = 12000
     unlabeled = len(ux)
-
+    with open('ux.txt', 'w') as writer:
+        for wrd in ux:
+            wrd_info = u''.join([ix_to_char[k] for k in wrd]).encode('utf-8').strip()
+            writer.write(wrd_info+'\n')
+    #with open('uy.txt', 'w') as writer:
+    #    for wrd in uy:
+    #        pdb.set_trace()
+    #        wrd_info = u''.join([ix_to_label[k] for k in wrd]).encode('utf-8').strip()
+    #        writer.write(wrd_info+'\n')
+    with open('lx_src.txt', 'w') as writer:
+        for wrd in lx_src:
+            wrd_info = u''.join([ix_to_char[k] for k in wrd]).encode('utf-8').strip()
+            writer.write(wrd_info+'\n')
+    with open('lx_tgt.txt', 'w') as writer:
+        for wrd in lx_tgt:
+            wrd_info = u''.join([ix_to_char[k] for k in wrd]).encode('utf-8').strip()
+            writer.write(wrd_info+'\n')
+    #pdb.set_trace()
     if prune_train_data:
         inds = np.random.permutation(len(lx_src))
         inds = inds[:labeled]
