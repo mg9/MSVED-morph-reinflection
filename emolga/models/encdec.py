@@ -4,6 +4,8 @@ import logging
 import copy
 import emolga.basic.objectives as objectives
 import emolga.basic.optimizers as optimizers
+import pdb
+
 
 from theano.compile.nanguardmode import NanGuardMode
 from emolga.layers.core import Dropout, Dense, Dense2, Identity
@@ -816,6 +818,7 @@ class DecoderAttCxt(Decoder):
         else:
             prob_dist = self.output(readout)  # (nb_samples, max_len, vocab_size)
 
+        #pdb.set_trace()
         log_prob = T.sum(T.log(self._grab_prob(prob_dist, target)) * X_mask, axis=1)
         log_ppl  = log_prob / Count
 

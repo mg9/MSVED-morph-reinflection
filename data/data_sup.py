@@ -7,6 +7,7 @@ import codecs
 import sys
 import logging
 import collections
+import pdb; 
 
 logger = logging.getLogger(__name__)
 UTF8Writer = codecs.getwriter('utf8')
@@ -111,7 +112,7 @@ def read_task3(fname, allwords):
                 logging.info(word)
 
             data_pair = ' '.join([fields[1], word_2])
-            # unique_data_set_train.add(data_pair)
+            unique_data_set_train.add(data_pair)
             for tag in tags:
                 att, value = tag.split('=')
                 if att in tags_pre:
@@ -228,6 +229,7 @@ def create_train_sup_task3(fname, char_to_ix, label_to_ix, tag_to_ix, class_num)
 
 def create_train_data(char_to_ix, label_to_idx, tag_to_ix, class_num):
     logging.info(tag_to_ix)
+    pdb.set_trace()
     for data in unique_data_set_train:
         fields = data.split(' ')
         tags = fields[0].split(',')
@@ -289,11 +291,11 @@ def preprocess(addsup=0.0):
     allwords = ""
 
     allwords = read_task3(task3_train_data, allwords)
-    allwords = read_task1(task1_train_data, allwords)
-    allwords = read_task1(task1_test_data, allwords)
-    allwords = read_task2(task2_train_data, allwords, test=True)
-    allwords = read_task2(task2_test_data, allwords, test=True)
-    allwords = read_task2(task2_dev_data, allwords, test=True)
+    #allwords = read_task1(task1_train_data, allwords)
+    #allwords = read_task1(task1_test_data, allwords)
+    #allwords = read_task2(task2_train_data, allwords, test=True)
+    #allwords = read_task2(task2_test_data, allwords, test=True)
+    #allwords = read_task2(task2_dev_data, allwords, test=True)
 
     chars = list(set(allwords))
     data_size, vocab_size = len(allwords), len(chars)

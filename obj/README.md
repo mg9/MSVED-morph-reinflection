@@ -1,1 +1,0 @@
-`obj` dump directory

@@ -1,7 +1,7 @@
 __author__ = 'chuntingzhou'
 import sys
 import os
-import theano
+import theano, pdb
 
 sys.path.append('../')
 from data import data_sup
@@ -15,7 +15,7 @@ from emolga.utils.generic_utils import init_logging
 from semi_models.utils import *
 import argparse
 import codecs
-
+import pdb
 
 def write_config(config, filename):
     with open(filename, 'w') as fout:
@@ -63,7 +63,6 @@ def main(config):
 
     logging.info("Process data.....")
     voc_size, class_num, label_list, ix_to_char, ix_to_label, x_test_src, x_test_tgt, y_test_tgt = data_sup.preprocess(config["add_uns"])
-
     logging.info("Done.")
 
     logging.info(ix_to_char)
@@ -84,7 +83,8 @@ def main(config):
     ly_src = np.array(data_sup.ly_src)
     lx_tgt = np.array(data_sup.lx_tgt)
     ly_tgt = np.array(data_sup.ly_tgt)
-    ux = ux[:config['ul_num']]
+    #pdb.set_trace()
+    ux = ux[-12798:] #ux[:config['ul_num']]
     logging.info("length of ux and uy: %d, %d", len(ux), len(uy))
     logging.info("Total unlabeled training samples: %d", len(ux))
     logging.info("Total labeled training samples before pruning: %d", len(lx_src))
@@ -107,6 +107,7 @@ def main(config):
 
     l_batches = data_sup.get_batches(labeled, batch_size)
     u_batches = data_sup.get_batches(unlabeled, batch_size)
+    pdb.set_trace()
     l_cur_batch = 0
     u_cur_batch = 0
     rng = RandomStreams(1234)
@@ -224,11 +225,8 @@ def main(config):
             else:
                 dt_sl = config["dt_sl"]
 
-            if has_ly_src:
-                inputs = [lx_src_batch] + ly_src_batch + [lx_tgt_batch] + ly_tgt_batch + [uxbatch] + [kl_w] + [temp] + [dt_sl]
-            else:
-                inputs = [lx_src_batch] + [lx_tgt_batch] + ly_tgt_batch + [uxbatch] + [kl_w] + [temp] + [dt_sl]
-
+      
+            inputs = [lx_src_batch] + [lx_tgt_batch] + ly_tgt_batch + [uxbatch] + [kl_w] + [temp] + [dt_sl]
             outputs = ssl_vae.train_(*inputs)
 
             loss = outputs[0]
@@ -241,7 +239,6 @@ def main(config):
             kl_u = outputs[7]
             q_y_x_l = outputs[8:8 + class_num]
             q_y_x_u = outputs[-class_num:]
-
             accl, sep_acc_l, pred_l, yl, avg_acc_l = compute_acc(q_y_x_l, ly_tgt_batch, len(lx_src_batch))
 
             if update_ind % dispfreq == 0:
@@ -277,6 +274,8 @@ def main(config):
                     test_outputs = ssl_vae.test_pred_(*test_inputs)
                     test_q_y_x_loss += test_outputs[0]
                     test_q_y_x = test_outputs[-class_num:]
+
+
                     cur_bs = len(test_x_tgt)
                     test_joint_acc, test_separate_acc, test_prediction, test_true_label, test_avg = compute_acc(
                         test_q_y_x, test_y_tgt, cur_bs)
@@ -326,9 +325,10 @@ def main(config):
                     dec_init_at, cxt_at, cxt_mask_at, fixed_cxt_at = ssl_vae.f_get_dec_inith_cxt(*test_inputs_at)
                     sample_at, score_at = ssl_vae.decoder.get_sample(cxt_at, cxt_mask_at, fixed_cxt_at, dec_init_at,
                                                                      k=5, maxlen=50, stochastic=False)
+                    print y_at
                     tgt_word = [ix_to_char[c] for c in x_test_tgt[i]]
                     #ogging.info("*******AUTOENCODER************")
-                    #ogging.info("Origin word: %s", u" ".join(tgt_word))
+                    logging.info("Origin word: %s", u" ".join(tgt_word))
                     word = sample_at[np.array(score_at).argmin()]
                     gen_word = []
                     for c in word:
@@ -350,6 +350,7 @@ def main(config):
             if update_ind % genAccFreq == 0 and update_ind >= config["start_val"]:
                 corr = 0
                 for i in range(0, test_size):
+                    #pdb.set_trace()
                     x, _, y = data_sup.prepare_xy_batch([x_test_src[i]], [y_test_tgt[i]], label_list)
                     test_inputs = [x] + y
                     dec_init_h, cxt, cxt_mask, z = ssl_vae.f_get_dec_inith_cxt(*test_inputs)
@@ -359,6 +360,8 @@ def main(config):
 
                     src_word = [ix_to_char[c] for c in x_test_src[i]]
                     tgt_word = [ix_to_char[c] for c in x_test_tgt[i]]
+                    print src_word, tgt_word
+
                     # score = score / np.array([len(s) for s in sample])
                     word = sample[np.array(score).argmin()]
                     gen_word = []
@@ -433,7 +436,7 @@ if __name__ == "__main__":
     parser.add_argument("-optimizer", action="store", type=str, default="adadelta")
     parser.add_argument("-withcxt", action="store_true", default=False)
     parser.add_argument("-hid_dim", action="store", type=int, default=256)
-    parser.add_argument("-only_ul", action="store_true", default=False)
+    parser.add_argument("-only_ul", action="store_true", default=True)
     parser.add_argument("-sl_anneal", action="store_true", default=False)
     parser.add_argument("-dt_sl", action="store", type=float, default=1.0)
     parser.add_argument("-alpha", action="store", type=float, default=1.0)

@@ -7,7 +7,7 @@ from emolga.models.encdec import Encoder, DecoderAttCxt
 from emolga.models.core import Model
 from semi_models.layers import *
 from semi_models.utils import *
-
+import pdb
 logger = logging.getLogger(__name__)
 RNN = GRU  # change it here for other RNN semi_models.
 
@@ -36,17 +36,13 @@ class SSL_VAE(Model):
         self.only_ul = config['only_ul']
         self.class_num = config['class_num']
         self.label_list = config['label_list']  # number of labels for each class
-
         self.dt_uns = config['dt_uns']
-
         self.activation_dense = config['activation_dense']  # 'tanh'
         self.init_w = config['init_dense']  # 'normal' or 'glorot_normal'
         self.both_gaussian = config['both_gaussian']
-
         self.enc_hidden_dim = config['enc_hidden_dim']
         self.dec_hidden_dim = config['dec_hidden_dim']
         self.dec_contxt_dim = config['dec_contxt_dim']
-
         self.has_ly_src = config['has_ly_src']
         self.bidirectional = config['bidirectional']
         self.semi_supervise = not (config['only_sup'] or config['only_ul'])
@@ -111,13 +107,13 @@ class SSL_VAE(Model):
         self.f_get_dec_inith_cxt = theano.function([input] + target_label, [dec_init_state, cxt, cxt_mask, z])
         self.decoder.build_sampler()
 
-        if not self.pure_sup:
-            _, logits = self.q_y_x(qx)
-            sampled_y = []
-            for i in range(0, self.class_num):
-                sampled_y.append(gumbel_softmax(logits[i], 0.5, self.rng, True))
-            self.f_get_gumbel_labels = theano.function([input], sampled_y)
-            self.f_get_z = theano.function([input], z)
+        _, logits = self.q_y_x(qx)
+        sampled_y = []
+        for i in range(0, self.class_num):
+            sampled_y.append(gumbel_softmax(logits[i], 0.5, self.rng, True))
+        
+        self.f_get_gumbel_labels = theano.function([input], sampled_y)
+        self.f_get_z = theano.function([input], z)
 
     def compile_train(self):
         input_sl = T.matrix('x_sl', dtype='int32')  # padded input word for training
@@ -129,83 +125,24 @@ class SSL_VAE(Model):
         temp_anneal = T.scalar('temperature', dtype=theano.config.floatX)
         sl_anneal = T.scalar('sl_weight', dtype=theano.config.floatX)
 
-        if self.pure_sup:
-            l_obj, l_q_y_x_loss, kl_l = self.compile_train_l_one_direction(input_sl, input_tl, y_tl, kl_anneal)
-            logging.info("Supervise Learning.")
-            loss = l_obj
-            updates = self.optimizer.get_updates(self.params, loss)
-            logging.info("Compiling train function starts.............")
-            self.train_ = theano.function(
-                [input_sl] + [input_tl] + y_tl + [kl_anneal],
-                [loss, l_q_y_x_loss, kl_l],
-                updates=updates,
-                name='train_fun',
-                on_unused_input='ignore')
-            return "Compilation of supervised function done."
-        elif self.has_ly_src:
-            l_obj, l_q_y_x_loss, l_inner, l_recon_loss, l_py, kl_l = self.compile_train_l(input_sl, input_tl, y_tl, temp_anneal, kl_anneal, y_sl)
-        else:
-            l_obj, l_q_y_x_loss, l_inner, l_recon_loss, l_py, kl_l = self.compile_train_l(input_sl, input_tl, y_tl, temp_anneal, kl_anneal)
 
-        if not self.pure_sup:
-            u_obj, u_inner, u_recon_loss, u_py, kl_u, att_probs = self.compile_train_u(input_u, kl_anneal, temp_anneal)
-
-        if self.semi_supervise:
-            logging.info("Semi-supervise Learning.")
-            loss = sl_anneal * l_obj + self.dt_uns * u_obj
-        elif self.only_ul:
-            logging.info("Unsupervise Learning.")
-            loss = u_obj
-        else:
-            logging.info("Weak/Supervise Learning.")
-            loss = l_obj
-
+        l_obj, l_q_y_x_loss, l_inner, l_recon_loss, l_py, kl_l = self.compile_train_l(input_sl, input_tl, y_tl, temp_anneal, kl_anneal)
+        u_obj, u_inner, u_recon_loss, u_py, kl_u, att_probs = self.compile_train_u(input_u, kl_anneal, temp_anneal)
+        logging.info("Unsupervise Learning.")
+        loss = u_obj
         updates = self.optimizer.get_updates(self.params, loss)
-
         logging.info("Compiling train function starts.............")
-
-        if self.has_ly_src:
-            self.train_ = theano.function(
-                [input_sl] + y_sl + [input_tl] + y_tl + [input_u] + [kl_anneal] + [temp_anneal] + [sl_anneal],
-                [loss, l_obj, l_q_y_x_loss, u_obj, l_recon_loss, u_recon_loss, kl_l,
-                 kl_u] + l_py + u_py,
-                updates=updates,
-                name='train_fun',
-                on_unused_input='ignore')
-        else:
-            self.train_ = theano.function(
+        self.train_ = theano.function(
                 [input_sl] + [input_tl] + y_tl + [input_u] + [kl_anneal] + [temp_anneal] + [sl_anneal],
                 [loss, l_obj, l_q_y_x_loss, u_obj, l_recon_loss, u_recon_loss, kl_l,
                  kl_u] + l_py + u_py,
                 updates=updates,
                 name='train_fun',
                 on_unused_input='ignore')
+        
         logging.info("Compiling train function done.")
         self.test_pred_ = theano.function([input_tl] + y_tl + [kl_anneal], [l_q_y_x_loss] + l_py,
                                           on_unused_input='ignore')
-
-    def compile_train_l_one_direction(self, input_sl, input_tl, y_tl, kl_anneal):
-        batch_size = input_sl.shape[0]
-
-        enc_src = self.encoder.build_encoder(input_sl)
-        z_s_mu = self.z_mu(enc_src)
-        z_s_logvar = self.z_logvar(enc_src)
-        z_s = z_s_mu + T.exp(0.5 * z_s_logvar) * self.rng.normal(z_s_mu.shape, avg=0.0, std=1.0)
-
-        dec_init_y_tgt, y_ctx_tgt, y_ctx_mask_tgt = self.y_dense_p(y_tl)
-        dec_init_state_src_to_tgt = self.p_h_yz(z_s, dec_init_y_tgt)
-        log_p_x_src_tgt, _, att_probs_src_tgt = self.decoder.build_decoder(input_tl, context=y_ctx_tgt,
-                                                                           c_mask=y_ctx_mask_tgt, fixed_context=z_s,
-                                                                           provide_init_h=dec_init_state_src_to_tgt)
-        log_p_x_src_tgt = T.mean(-log_p_x_src_tgt.reshape((batch_size, 1)))
-        log_p_y = T.mean(self.p_y(y_tl))
-        kl_s = T.mean(-0.5 * T.sum(
-            tensor.alloc(1.0, z_s_mu.shape[0], z_s_mu.shape[1]) + z_s_logvar - z_s_mu ** 2 - T.exp(z_s_logvar),
-            axis=1).reshape((batch_size, 1)))
-        l_obj = log_p_x_src_tgt + log_p_y + kl_anneal * kl_s
-
-        return l_obj, log_p_x_src_tgt, kl_s
-
 
     def compile_train_l(self, input_sl, input_tl, y_tl, temp_anneal, kl_anneal, y_sl=None):
         batch_size = input_sl.shape[0]
@@ -220,13 +157,12 @@ class SSL_VAE(Model):
         z_t_logvar = self.z_logvar(enc_tgt)
         z_t = z_t_mu + T.exp(0.5 * z_t_logvar) * self.rng.normal(z_t_mu.shape, avg=0.0, std=1.0)
 
-        if not self.has_ly_src:
-            q_y_x_unlabeled, logits = self.q_y_x(enc_src)
-            y_sl = []
-            for i in range(0, self.class_num):
-                y_sl.append(gumbel_softmax(logits[i], temp_anneal, self.rng, True))
-            # get the entropy of q(y|x)
-            log_q_y_x_unlabeled = -self._get_prob_q_x_y(y_sl, q_y_x_unlabeled)
+        q_y_x_unlabeled, logits = self.q_y_x(enc_src)
+        y_sl = []
+        for i in range(0, self.class_num):
+            y_sl.append(gumbel_softmax(logits[i], temp_anneal, self.rng, True))
+        # get the entropy of q(y|x)
+        log_q_y_x_unlabeled = -self._get_prob_q_x_y(y_sl, q_y_x_unlabeled)
 
         dec_init_y_tgt, y_ctx_tgt, y_ctx_mask_tgt = self.y_dense_p(y_tl)
         dec_init_y_src, y_ctx_src, y_ctx_mask_src = self.y_dense_p(y_sl)
@@ -238,19 +174,19 @@ class SSL_VAE(Model):
                                                                           provide_init_h=dec_init_state_tgt_to_src)
         log_p_x_tgt_src = T.mean(-log_p_x_tgt_src.reshape((batch_size, 1)))
 
-        if not self.cross_only:
-            # source self decode
-            dec_init_state_src_to_src = self.p_h_yz(z_s, dec_init_y_src)
-            log_p_x_src_src, _, att_probs_src_src = self.decoder.build_decoder(input_sl, context=y_ctx_src,
-                                                                               c_mask=y_ctx_mask_src, fixed_context=z_s,
-                                                                               provide_init_h=dec_init_state_src_to_src)
-            log_p_x_src_src = T.mean(-log_p_x_src_src.reshape((batch_size, 1)))
-            # target self decode
-            dec_init_state_tgt_to_tgt = self.p_h_yz(z_t, dec_init_y_tgt)
-            log_p_x_tgt_tgt, _, att_probs_tgt_tgt = self.decoder.build_decoder(input_tl, context=y_ctx_tgt,
-                                                                              c_mask=y_ctx_mask_tgt, fixed_context=z_t,
-                                                                              provide_init_h=dec_init_state_tgt_to_tgt)
-            log_p_x_tgt_tgt = T.mean(-log_p_x_tgt_tgt.reshape((batch_size, 1)))
+
+        # source self decode
+        dec_init_state_src_to_src = self.p_h_yz(z_s, dec_init_y_src)
+        log_p_x_src_src, _, att_probs_src_src = self.decoder.build_decoder(input_sl, context=y_ctx_src,
+                                                                            c_mask=y_ctx_mask_src, fixed_context=z_s,
+                                                                            provide_init_h=dec_init_state_src_to_src)
+        log_p_x_src_src = T.mean(-log_p_x_src_src.reshape((batch_size, 1)))
+        # target self decode
+        dec_init_state_tgt_to_tgt = self.p_h_yz(z_t, dec_init_y_tgt)
+        log_p_x_tgt_tgt, _, att_probs_tgt_tgt = self.decoder.build_decoder(input_tl, context=y_ctx_tgt,
+                                                                            c_mask=y_ctx_mask_tgt, fixed_context=z_t,
+                                                                            provide_init_h=dec_init_state_tgt_to_tgt)
+        log_p_x_tgt_tgt = T.mean(-log_p_x_tgt_tgt.reshape((batch_size, 1)))
 
 
         # target cross decode
@@ -260,10 +196,7 @@ class SSL_VAE(Model):
                                                               provide_init_h=dec_init_state_src_to_tgt)
         log_p_x_src_tgt = T.mean(-log_p_x_src_tgt.reshape((batch_size, 1)))
 
-        if not self.cross_only:
-            log_p_x_yz = log_p_x_src_src + log_p_x_tgt_src + log_p_x_src_tgt + log_p_x_tgt_tgt
-        else:
-            log_p_x_yz = log_p_x_tgt_src + log_p_x_src_tgt
+        log_p_x_yz = log_p_x_src_src + log_p_x_tgt_src + log_p_x_src_tgt + log_p_x_tgt_tgt
         # priors
         log_p_y = self.p_y(y_tl)
         log_p_y += self.p_y(y_sl)
@@ -280,18 +213,9 @@ class SSL_VAE(Model):
 
         # classification error
         q_y_x_labeled, py = self.q_y_x(enc_tgt, labeled=True, Y=y_tl)
-
-        if self.has_ly_src:
-            q_y_x_labeled_src, _ = self.q_y_x(enc_src, labeled=True, Y=y_sl)
-            q_y_x_labeled += q_y_x_labeled_src
         q_y_x_labeled = T.mean(q_y_x_labeled)
-
-        if not self.has_ly_src:
-            l_inner = log_p_x_yz + log_p_y + kl_anneal * kl_st + T.mean(log_q_y_x_unlabeled)
-        else:
-            l_inner = log_p_x_yz + log_p_y + kl_anneal * kl_st
+        l_inner = log_p_x_yz + log_p_y + kl_anneal * kl_st + T.mean(log_q_y_x_unlabeled)
         l_obj = l_inner + self.alpha * q_y_x_labeled
-
         recon_loss = log_p_x_yz
 
         return l_obj, q_y_x_labeled, l_inner, recon_loss, py, kl_st
@@ -304,6 +228,7 @@ class SSL_VAE(Model):
         sampled_y = []
         for i in range(0, self.class_num):
             sampled_y.append(gumbel_softmax(logits[i], temp_anneal, self.rng, True))
+        
         z_mu = self.z_mu(qx)
         z_logvar = self.z_logvar(qx)
         z = z_mu + T.exp(0.5 * z_logvar) * self.rng.normal(z_mu.shape, avg=0.0, std=1.0)
@@ -314,6 +239,7 @@ class SSL_VAE(Model):
         log_p_x_yz, _, att_probs = self.decoder.build_decoder(input_u, context=y_contxt_source,
                                                               c_mask=y_contxt_mask, fixed_context=z,
                                                               provide_init_h=dec_init_state)
+                                                              
         log_p_x_yz = -log_p_x_yz.reshape((batch_size, 1))
         log_p_x_yz = T.mean(log_p_x_yz)
         log_p_y = self.p_y(sampled_y)  # already negative
